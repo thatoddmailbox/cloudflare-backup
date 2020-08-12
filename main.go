@@ -24,12 +24,28 @@ type result struct {
 	ResultInfo resultInfo `json:"result_info"`
 }
 
+type dnsRecord struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	Content   string `json:"content"`
+	Proxiable bool   `json:"proxiable"`
+	Proxied   bool   `json:"proxied"`
+	TTL       uint64 `json:"ttl"`
+	Locked    bool   `json:"locked"`
+}
+
 type zone struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	ModifiedOn  string `json:"modified_on"`
 	ActivatedOn string `json:"activated_on"`
 	CreatedOn   string `json:"created_on"`
+}
+
+type dnsRecordsResult struct {
+	result
+	DNSRecords []dnsRecord `json:"result"`
 }
 
 type zonesResult struct {
@@ -83,6 +99,21 @@ func main() {
 	}
 
 	for _, zone := range result.Zones {
-		log.Println(zone)
+		log.Printf("Processing %s...", zone.Name)
+
+		// fetch the records for this zone
+		dnsResult := dnsRecordsResult{}
+		err := get("zones/"+zone.ID+"/dns_records", url.Values{
+			"per_page": []string{"100"},
+		}, &dnsResult)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, record := range dnsResult.DNSRecords {
+			log.Println(record)
+		}
 	}
+
+	log.Println("Done!")
 }
