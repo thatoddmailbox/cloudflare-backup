@@ -116,7 +116,6 @@ func handleZone(zone zone) error {
 	}
 
 	for _, record := range dnsResult.DNSRecords {
-		log.Println(record)
 		proxiedString := "NO_PROXY"
 		if record.Proxied {
 			proxiedString = "PROXY"
