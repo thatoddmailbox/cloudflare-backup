@@ -7,6 +7,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
+	"strconv"
 )
 
 type resultInfo struct {
@@ -56,6 +59,7 @@ type zonesResult struct {
 const baseURL = "https://api.cloudflare.com/client/v4/"
 
 var apiKey string
+var outputDir string
 
 func get(path string, params url.Values, output interface{}) error {
 	request, err := http.NewRequest("GET", baseURL+path+"?"+params.Encode(), nil)
@@ -79,14 +83,80 @@ func get(path string, params url.Values, output interface{}) error {
 	return json.Unmarshal(body, output)
 }
 
+func handleZone(zone zone) error {
+	// fetch the records for this zone
+	dnsResult := dnsRecordsResult{}
+	err := get("zones/"+zone.ID+"/dns_records", url.Values{
+		"per_page": []string{"100"},
+	}, &dnsResult)
+	if err != nil {
+		return err
+	}
+
+	// write them out
+	outputFile, err := os.Create(path.Join(outputDir, zone.Name+".txt"))
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	const separator = "\t\t"
+
+	_, err = outputFile.WriteString(
+		"#\r\n" +
+			"# DNS zone backup for " + zone.Name + "\r\n" +
+			"# Domain created on: " + zone.CreatedOn + "\r\n" +
+			"# Domain activated on: " + zone.ActivatedOn + "\r\n" +
+			"# Domain last modified on: " + zone.ModifiedOn + "\r\n" +
+			"#\r\n" +
+			"# Name" + separator + "TTL" + separator + "Type" + separator + "Proxied" + separator + "Value\r\n",
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, record := range dnsResult.DNSRecords {
+		log.Println(record)
+		proxiedString := "NO_PROXY"
+		if record.Proxied {
+			proxiedString = "PROXY"
+		}
+
+		_, err = outputFile.WriteString(
+			record.Name + separator + strconv.FormatUint(record.TTL, 10) + separator + record.Type + separator + proxiedString + separator + record.Content + "\r\n",
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	log.Println("cloudflare-backup")
 
 	flag.StringVar(&apiKey, "api-key", "", "The CloudFlare API key to use.")
+	flag.StringVar(&outputDir, "output", "output/", "The output directory.")
 	flag.Parse()
 
+	outputDirStat, err := os.Stat(outputDir)
+	if os.IsNotExist(err) {
+		// create the output directory then
+		err := os.Mkdir(outputDir, 0777)
+		if err != nil {
+			panic(err)
+		}
+	} else if err != nil {
+		panic(err)
+	}
+
+	if err == nil && !outputDirStat.IsDir() {
+		log.Fatalf("The provided output path must be a directory, not a file.")
+	}
+
 	result := zonesResult{}
-	err := get("zones", url.Values{
+	err = get("zones", url.Values{
 		"per_page": []string{"50"},
 	}, &result)
 	if err != nil {
@@ -101,17 +171,9 @@ func main() {
 	for _, zone := range result.Zones {
 		log.Printf("Processing %s...", zone.Name)
 
-		// fetch the records for this zone
-		dnsResult := dnsRecordsResult{}
-		err := get("zones/"+zone.ID+"/dns_records", url.Values{
-			"per_page": []string{"100"},
-		}, &dnsResult)
+		err := handleZone(zone)
 		if err != nil {
 			panic(err)
-		}
-
-		for _, record := range dnsResult.DNSRecords {
-			log.Println(record)
 		}
 	}
 
