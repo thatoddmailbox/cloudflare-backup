@@ -58,7 +58,7 @@ type zonesResult struct {
 
 const baseURL = "https://api.cloudflare.com/client/v4/"
 
-var apiKey string
+var apiToken string
 var outputDir string
 
 func get(path string, params url.Values, output interface{}) error {
@@ -66,7 +66,7 @@ func get(path string, params url.Values, output interface{}) error {
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Authorization", "Bearer "+apiKey)
+	request.Header.Set("Authorization", "Bearer "+apiToken)
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := http.DefaultClient.Do(request)
@@ -136,7 +136,7 @@ func handleZone(zone zone) error {
 func main() {
 	log.Println("cloudflare-backup")
 
-	flag.StringVar(&apiKey, "api-key", "", "The CloudFlare API key to use.")
+	flag.StringVar(&apiToken, "api-token", "", "The CloudFlare API token to use.")
 	flag.StringVar(&outputDir, "output", "output/", "The output directory.")
 	flag.Parse()
 
@@ -153,6 +153,10 @@ func main() {
 
 	if err == nil && !outputDirStat.IsDir() {
 		log.Fatalf("The provided output path must be a directory, not a file.")
+	}
+
+	if apiToken == "" {
+		log.Fatalf("You must provide a CloudFlare API token with the -api-token flag.")
 	}
 
 	result := zonesResult{}
