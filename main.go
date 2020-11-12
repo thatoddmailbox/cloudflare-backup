@@ -27,6 +27,29 @@ type result struct {
 	ResultInfo resultInfo `json:"result_info"`
 }
 
+type pageRuleTargets struct {
+	Target     string `json:"target"`
+	Constraint struct {
+		Operator string `json:"operator"`
+		Value    string `json:"value"`
+	} `json:"constraint"`
+}
+
+type pageRuleActions struct {
+	ID    string      `json:"id"`
+	Value interface{} `json:"value"`
+}
+
+type pageRule struct {
+	ID         string            `json:"id"`
+	Targets    []pageRuleTargets `json:"targets"`
+	Actions    []pageRuleActions `json:"actions"`
+	Priority   int               `json:"priority"`
+	Status     string            `json:"status"`
+	ModifiedOn string            `json:"modified_on"`
+	CreatedOn  string            `json:"created_on"`
+}
+
 type dnsRecord struct {
 	ID        string `json:"id"`
 	Type      string `json:"type"`
@@ -49,6 +72,11 @@ type zone struct {
 type dnsRecordsResult struct {
 	result
 	DNSRecords []dnsRecord `json:"result"`
+}
+
+type pageRulesResult struct {
+	result
+	PageRules []pageRule `json:"result"`
 }
 
 type zonesResult struct {
@@ -93,6 +121,15 @@ func handleZone(zone zone) error {
 		return err
 	}
 
+	// fetch the page rules for this zone
+	pageRuleResult := pageRulesResult{}
+	err = get("zones/"+zone.ID+"/pagerules", url.Values{
+		"order": []string{"priority"},
+	}, &pageRuleResult)
+	if err != nil {
+		return err
+	}
+
 	// write them out
 	outputFile, err := os.Create(path.Join(outputDir, zone.Name+".txt"))
 	if err != nil {
@@ -124,6 +161,28 @@ func handleZone(zone zone) error {
 		_, err = outputFile.WriteString(
 			record.Name + separator + strconv.FormatUint(record.TTL, 10) + separator + record.Type + separator + proxiedString + separator + record.Content + "\r\n",
 		)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = outputFile.WriteString("#\r\n# Page rules\r\n")
+	if err != nil {
+		return err
+	}
+	if len(pageRuleResult.PageRules) == 0 {
+		_, err = outputFile.WriteString("# (no page rules)\r\n")
+		if err != nil {
+			return err
+		}
+	}
+	e := json.NewEncoder(outputFile)
+	for _, pageRule := range pageRuleResult.PageRules {
+		_, err = outputFile.WriteString("# ")
+		if err != nil {
+			return err
+		}
+		err = e.Encode(pageRule)
 		if err != nil {
 			return err
 		}
